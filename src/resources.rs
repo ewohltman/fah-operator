@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{DaemonSet, DaemonSetSpec};
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EnvVar, EnvVarSource, PodSpec, PodTemplateSpec, ResourceRequirements,
-    SecurityContext, ServiceAccount,
+    Container, ContainerPort, EnvVar, EnvVarSource, ObjectFieldSelector, PodSpec, PodTemplateSpec,
+    ResourceRequirements, SecurityContext, ServiceAccount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, OwnerReference};
@@ -131,6 +131,18 @@ fn env_vars(cr: &FoldingAtHome) -> Vec<EnvVar> {
         EnvVar {
             name: "ENABLE_GPU".to_string(),
             value: Some(spec.enable_gpu.to_string()),
+            ..Default::default()
+        },
+        // Name each node's client after the node it runs on.
+        EnvVar {
+            name: "MACHINE_NAME".to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    field_path: "spec.nodeName".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
             ..Default::default()
         },
     ];
