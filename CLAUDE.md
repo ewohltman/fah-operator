@@ -66,6 +66,18 @@ a generated file, do not hand-edit it.
   enables schemars **v1** (matching kube-derive).
 - Rust edition 2024.
 
+## Continuous integration
+
+Workflows are in `.github/workflows/`:
+
+- `ci.yml` — `cargo fmt --check`, Clippy (`-D warnings`), tests, release build,
+  and a CRD drift check (`crdgen` vs `deploy/crd.yaml`) on pushes/PRs to `main`
+  and `develop`. Run these locally before pushing to avoid CI failures.
+- `images.yml` — builds and pushes the operator/client images to GHCR on `main`
+  and `v*` tags.
+- `claude-code-review.yml` — auto-reviews pull requests via
+  `anthropics/claude-code-action`; needs the `ANTHROPIC_API_KEY` repo secret.
+
 ## Conventions
 
 - Keep `deploy/crd.yaml` in sync with `src/crd.rs` via `crdgen`.

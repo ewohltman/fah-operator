@@ -143,6 +143,20 @@ docker build -t ghcr.io/ewohltman/fah-operator:latest -f docker/operator/Dockerf
 docker build -t ghcr.io/ewohltman/fah-client:latest   docker/fah-client
 ```
 
+## Continuous integration
+
+GitHub Actions workflows live in [`.github/workflows/`](./.github/workflows):
+
+- **CI** (`ci.yml`) — on every push/PR to `main` and `develop`: `cargo fmt`
+  check, Clippy (warnings as errors), tests, release build, a check that
+  `deploy/crd.yaml` is in sync with `src/crd.rs`, and a no-push Docker build of
+  both images.
+- **Publish images** (`images.yml`) — on push to `main` / `v*` tags: builds and
+  pushes the operator and client images to GHCR.
+- **Claude Code Review** (`claude-code-review.yml`) — automatically reviews every
+  pull request. It requires an `ANTHROPIC_API_KEY` repository secret (or install
+  the Claude GitHub App via `/install-github-app` in Claude Code).
+
 ## Development
 
 See [CLAUDE.md](./CLAUDE.md) for repository layout and design details.
