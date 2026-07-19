@@ -31,7 +31,10 @@ async fn main() -> Result<()> {
 
     info!(version = env!("CARGO_PKG_VERSION"), %holder_id, %namespace, "starting fah-operator");
 
-    leader::run(client, namespace, holder_id).await
+    // Returns only on SIGTERM/SIGINT, after releasing the leadership lease.
+    leader::run(client, namespace, holder_id).await?;
+    info!("fah-operator shut down gracefully");
+    Ok(())
 }
 
 /// Best-effort hostname for use as a leader-election holder id outside a pod.

@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use kube::Client;
 use kube_leader_election::{LeaseLock, LeaseLockParams, LeaseLockResult};
-use tokio::sync::oneshot;
+use tokio::signal::unix::{SignalKind, signal};
+use tokio::sync::{oneshot, watch};
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
@@ -86,11 +87,60 @@ async fn renew_loop(
     let _ = lost.send(());
 }
 
+/// Watch for SIGTERM/SIGINT; the returned channel flips to `true` on receipt.
+///
+/// Installing a handler turns pod termination from an abrupt kill into a
+/// graceful shutdown: the leader gets a chance to release its lease so a
+/// standby can take over immediately instead of waiting out [`LEASE_TTL`].
+fn termination_signal() -> watch::Receiver<bool> {
+    let (tx, rx) = watch::channel(false);
+    tokio::spawn(async move {
+        let (Ok(mut sigterm), Ok(mut sigint)) = (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::interrupt()),
+        ) else {
+            warn!("failed to install signal handlers; skipping graceful shutdown");
+            return;
+        };
+        tokio::select! {
+            _ = sigterm.recv() => info!("received SIGTERM"),
+            _ = sigint.recv() => info!("received SIGINT"),
+        }
+        let _ = tx.send(true);
+        // Keep the sender alive so receivers observe `true` instead of a
+        // closed channel while shutdown completes.
+        std::future::pending::<()>().await;
+    });
+    rx
+}
+
+/// Resolve once `term` signals termination; never resolves if the signal task
+/// died without signalling (so a select arm using this cannot fire spuriously).
+async fn terminated(term: &mut watch::Receiver<bool>) {
+    if term.wait_for(|stop| *stop).await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
+/// Best-effort lease release so a standby takes over in one renew interval
+/// instead of waiting out [`LEASE_TTL`].
+async fn step_down(client: &Client, namespace: &str, holder_id: &str) {
+    let lock = LeaseLock::new(client.clone(), namespace, params(holder_id));
+    match lock.step_down().await {
+        Ok(()) => info!("released leadership lease"),
+        Err(err) => {
+            warn!(error = %err, "failed to release leadership lease; standbys must wait for expiry");
+        }
+    }
+}
+
 /// Run the operator with leader election: contend for the lease, run the
-/// controller while leading, and re-contend if leadership is ever lost. Never
-/// returns under normal operation.
+/// controller while leading, and re-contend if leadership is ever lost.
+/// Returns only when a termination signal is received, releasing the lease
+/// first if this replica is the leader.
 pub async fn run(client: Client, namespace: String, holder_id: String) -> Result<()> {
     info!(%namespace, %holder_id, lease = LEASE_NAME, "starting leader election");
+    let mut term = termination_signal();
     loop {
         match try_acquire(&client, &namespace, &holder_id).await {
             Ok(true) => {
@@ -103,12 +153,30 @@ pub async fn run(client: Client, namespace: String, holder_id: String) -> Result
                     lost_tx,
                 ));
 
+                // Stop the controller on leadership loss or termination.
+                let (shutdown_tx, shutdown_rx) = oneshot::channel();
+                let mut term_trigger = term.clone();
+                let trigger = tokio::spawn(async move {
+                    tokio::select! {
+                        _ = lost_rx => {}
+                        () = terminated(&mut term_trigger) => {}
+                    }
+                    let _ = shutdown_tx.send(());
+                });
+
                 controller::run(client.clone(), async move {
-                    let _ = lost_rx.await;
+                    let _ = shutdown_rx.await;
                 })
                 .await;
 
                 renew.abort();
+                trigger.abort();
+
+                if *term.borrow() {
+                    info!("controller stopped for termination; stepping down");
+                    step_down(&client, &namespace, &holder_id).await;
+                    return Ok(());
+                }
                 info!("controller stopped; re-contending for leadership");
             }
             Ok(false) => debug!("another replica is leader; standing by"),
@@ -116,6 +184,12 @@ pub async fn run(client: Client, namespace: String, holder_id: String) -> Result
             // errors and keep contending rather than crashing the process.
             Err(err) => warn!(error = %err, "failed to check leadership lease; will retry"),
         }
-        sleep(RENEW_INTERVAL).await;
+        tokio::select! {
+            _ = sleep(RENEW_INTERVAL) => {}
+            () = terminated(&mut term) => {
+                info!("terminating; exiting leader election");
+                return Ok(());
+            }
+        }
     }
 }

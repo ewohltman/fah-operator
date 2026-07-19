@@ -124,7 +124,10 @@ spec:
 `deploy/operator.yaml` runs **3 replicas** with pod anti-affinity to spread them
 across nodes. They elect a leader via the `fah-operator-leader` Lease in the
 operator's namespace; standby replicas take over within the lease TTL (~15s) if the
-leader fails. You can inspect the current leader with:
+leader fails. On graceful shutdown (SIGTERM/SIGINT — e.g. a rolling update) the
+leader releases the Lease before exiting, so a standby takes over within one
+renew interval (~5s) instead of waiting out the TTL. You can inspect the current
+leader with:
 
 ```bash
 kubectl get lease fah-operator-leader -o yaml

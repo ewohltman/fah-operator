@@ -50,10 +50,22 @@ a generated file, do not hand-edit it.
   is idempotent create-or-update. `MANAGER` is defined in `src/lib.rs`.
 - **Status** is written to the `.status` subresource via a merge patch and mirrors
   the DaemonSet's `desiredNumberScheduled` / `numberReady` plus a `Ready` condition.
+  Status writes are **idempotent**: the controller computes the desired status
+  (`desired_status`, pure and unit-tested), carries `lastTransitionTime` over
+  unless the condition actually flipped, and skips the patch when nothing changed —
+  otherwise every write would bump `resourceVersion` and re-trigger reconcile in a
+  self-sustaining loop.
+- **Scoped watches.** The owned DaemonSet/ServiceAccount watches are filtered by
+  the `app.kubernetes.io/managed-by=fah-operator` label (stamped on every child by
+  `resources::labels`), so the controller does not cache unrelated cluster objects.
+  All watches use `any_semantic` so relists hit the apiserver watch cache instead
+  of etcd quorum reads.
 - **Leader election** uses `kube-leader-election` (a `Lease` in `coordination.k8s.io`
   named `fah-operator-leader`). Only the lease holder runs the controller; on lease
   loss the controller shuts down gracefully and the replica re-contends. Holder id
   and namespace come from the `POD_NAME` / `POD_NAMESPACE` downward-API env vars.
+  On SIGTERM/SIGINT the leader stops the controller and **releases the Lease**
+  (`step_down`) so a standby takes over in ~one renew interval instead of the TTL.
 - **GPU** is opt-in (`spec.enableGPU`): it adds an `nvidia.com/gpu` limit and sets
   `ENABLE_GPU=true`. CPU folding is the default.
 - **Secrets.** `passkey` and `accountToken` accept either an inline `value` or a
