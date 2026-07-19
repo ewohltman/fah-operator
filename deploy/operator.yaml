@@ -57,7 +57,7 @@ spec:
           # the digest is what actually pins the image. Update with the digest
           # printed by the `images.yml` publish workflow (or:
           # `docker buildx imagetools inspect ghcr.io/ewohltman/fah-operator:main`).
-          image: ghcr.io/ewohltman/fah-operator:main@sha256:35f1515191edc73cea93d15de5a98a94b686a00c2a2169b44226619121c306f9
+          image: ghcr.io/ewohltman/fah-operator:main@sha256:6e05e16dfa1b4685042f5538e6802c990ca3d61c8269b93dbb3a240937521c73
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAME
