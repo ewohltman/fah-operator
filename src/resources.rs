@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{DaemonSet, DaemonSetSpec};
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EnvVar, EnvVarSource, ObjectFieldSelector, PodSpec, PodTemplateSpec,
-    ResourceRequirements, SecurityContext, ServiceAccount,
+    Container, ContainerPort, EnvVar, EnvVarSource, HostPathVolumeSource, ObjectFieldSelector,
+    PodSpec, PodTemplateSpec, ResourceRequirements, SecurityContext, ServiceAccount, Volume,
+    VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, OwnerReference};
@@ -24,6 +25,16 @@ const WEB_PORT: i32 = 7396;
 
 /// Resource key GPU folding requests.
 const GPU_RESOURCE: &str = "nvidia.com/gpu";
+
+/// Mount path for the client's data directory inside the container.
+const DATA_DIR: &str = "/fah";
+
+/// Name of the volume/mount used for the persistent data directory.
+const DATA_VOLUME: &str = "data";
+
+/// UID the client image runs the `fah` user as. The init container chowns the
+/// persistent host path to this so the non-root client can write to it.
+const CLIENT_UID: i64 = 10000;
 
 /// Standard labels applied to every managed object.
 ///
@@ -179,19 +190,80 @@ fn resource_requirements(cr: &FoldingAtHome) -> Option<ResourceRequirements> {
     resources
 }
 
+/// The volume, mount, and root init container that persist `/fah` at `path`.
+///
+/// `path` is always an operator-derived path (see [`data_path`]), never
+/// user-supplied, so the root `chown` below cannot be aimed at a sensitive host
+/// directory.
+fn persistence(path: String, image: &str) -> (Volume, VolumeMount, Container) {
+    let volume = Volume {
+        name: DATA_VOLUME.to_string(),
+        host_path: Some(HostPathVolumeSource {
+            path,
+            // Create the directory on the node if it does not exist yet.
+            type_: Some("DirectoryOrCreate".to_string()),
+        }),
+        ..Default::default()
+    };
+
+    let mount = VolumeMount {
+        name: DATA_VOLUME.to_string(),
+        mount_path: DATA_DIR.to_string(),
+        ..Default::default()
+    };
+
+    // kubelet creates the hostPath as root:root, which the non-root client
+    // cannot write to. Chown it to the client uid once before the client runs.
+    let init = Container {
+        name: "fix-permissions".to_string(),
+        image: Some(image.to_string()),
+        command: Some(vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!("chown -R {CLIENT_UID}:{CLIENT_UID} {DATA_DIR}"),
+        ]),
+        volume_mounts: Some(vec![mount.clone()]),
+        security_context: Some(SecurityContext {
+            run_as_user: Some(0),
+            run_as_non_root: Some(false),
+            allow_privilege_escalation: Some(false),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    (volume, mount, init)
+}
+
+/// Operator-owned node path holding `cr`'s persisted data directory. Fixed by
+/// the operator (never user-supplied) and namespaced by the CR's namespace and
+/// name so multiple `FoldingAtHome`s do not collide on a node.
+fn data_path(cr: &FoldingAtHome, name: &str) -> String {
+    let namespace = cr
+        .meta()
+        .namespace
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
+    format!("/var/lib/fah-operator/{namespace}-{name}")
+}
+
 /// Build the DaemonSet that runs one client pod per node.
 pub fn daemon_set(cr: &FoldingAtHome) -> Result<DaemonSet> {
     let name = child_name(cr)?;
     let labels = labels(&name);
     let spec = &cr.spec;
 
+    let image = spec
+        .image
+        .clone()
+        .unwrap_or_else(|| DEFAULT_IMAGE.to_string());
+    let persistence = spec
+        .persist_data
+        .then(|| persistence(data_path(cr, &name), &image));
+
     let container = Container {
         name: "fah-client".to_string(),
-        image: Some(
-            spec.image
-                .clone()
-                .unwrap_or_else(|| DEFAULT_IMAGE.to_string()),
-        ),
+        image: Some(image),
         env: Some(env_vars(cr)),
         ports: Some(vec![ContainerPort {
             name: Some("web".to_string()),
@@ -204,12 +276,19 @@ pub fn daemon_set(cr: &FoldingAtHome) -> Result<DaemonSet> {
             run_as_non_root: Some(true),
             ..Default::default()
         }),
+        volume_mounts: persistence
+            .as_ref()
+            .map(|(_, mount, _)| vec![mount.clone()]),
         ..Default::default()
     };
 
     let pod_spec = PodSpec {
         service_account_name: Some(name.clone()),
         containers: vec![container],
+        init_containers: persistence.as_ref().map(|(_, _, init)| vec![init.clone()]),
+        volumes: persistence
+            .as_ref()
+            .map(|(volume, _, _)| vec![volume.clone()]),
         node_selector: (!spec.node_selector.is_empty()).then(|| spec.node_selector.clone()),
         tolerations: (!spec.tolerations.is_empty()).then(|| spec.tolerations.clone()),
         affinity: spec.affinity.clone(),
@@ -349,6 +428,52 @@ mod tests {
         assert_eq!(
             env.iter().find(|e| e.name == "ENABLE_GPU").unwrap().value,
             Some("true".to_string())
+        );
+    }
+
+    #[test]
+    fn no_persistence_by_default() {
+        let ds = daemon_set(&sample(FoldingAtHomeSpec::default())).unwrap();
+        let pod = ds.spec.unwrap().template.spec.unwrap();
+        assert!(pod.volumes.is_none());
+        assert!(pod.init_containers.is_none());
+        assert!(pod.containers[0].volume_mounts.is_none());
+    }
+
+    #[test]
+    fn persist_data_adds_volume_mount_and_init_container() {
+        let spec = FoldingAtHomeSpec {
+            persist_data: true,
+            ..Default::default()
+        };
+        let ds = daemon_set(&sample(spec)).unwrap();
+        let pod = ds.spec.unwrap().template.spec.unwrap();
+
+        // hostPath volume at the operator-derived, namespaced node path (never
+        // user-supplied) so the root chown cannot target a sensitive directory.
+        let volumes = pod.volumes.unwrap();
+        assert_eq!(volumes.len(), 1);
+        let host_path = volumes[0].host_path.as_ref().unwrap();
+        assert_eq!(host_path.path, "/var/lib/fah-operator/fah-sample");
+        assert_eq!(host_path.type_.as_deref(), Some("DirectoryOrCreate"));
+
+        // Client mounts it at the data dir.
+        let mount = &pod.containers[0].volume_mounts.as_ref().unwrap()[0];
+        assert_eq!(mount.name, "data");
+        assert_eq!(mount.mount_path, "/fah");
+
+        // Root init container fixes ownership for the non-root client.
+        let init = &pod.init_containers.unwrap()[0];
+        assert_eq!(init.name, "fix-permissions");
+        assert_eq!(init.security_context.as_ref().unwrap().run_as_user, Some(0));
+        assert_eq!(init.volume_mounts.as_ref().unwrap()[0].mount_path, "/fah");
+        assert!(
+            init.command
+                .as_ref()
+                .unwrap()
+                .last()
+                .unwrap()
+                .contains("chown")
         );
     }
 
