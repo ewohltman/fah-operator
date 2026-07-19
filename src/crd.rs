@@ -127,7 +127,10 @@ impl PowerLevel {
 }
 
 /// Observed state of a [`FoldingAtHome`].
-#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+///
+/// Derives `PartialEq` so the controller can compare the computed status with
+/// the observed one and skip the write entirely when nothing changed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FoldingAtHomeStatus {
     /// The `.metadata.generation` the operator last reconciled.

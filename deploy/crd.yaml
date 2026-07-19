@@ -692,7 +692,11 @@ spec:
                 type: string
             type: object
           status:
-            description: Observed state of a [`FoldingAtHome`].
+            description: |-
+              Observed state of a [`FoldingAtHome`].
+
+              Derives `PartialEq` so the controller can compare the computed status with
+              the observed one and skip the write entirely when nothing changed.
             nullable: true
             properties:
               conditions:
