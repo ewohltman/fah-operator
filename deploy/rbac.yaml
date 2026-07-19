@@ -1,0 +1,85 @@
+# RBAC for the fah-operator.
+#
+# A ClusterRole grants the permissions needed to watch FoldingAtHome resources
+# cluster-wide and manage the DaemonSets/ServiceAccounts they own. A namespaced
+# Role grants access to the Lease used for leader election.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fah-operator
+  namespace: fah-operator-system
+  labels:
+    app.kubernetes.io/name: fah-operator
+    app.kubernetes.io/component: operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fah-operator
+  labels:
+    app.kubernetes.io/name: fah-operator
+    app.kubernetes.io/component: operator
+rules:
+  # Watch and update the custom resource + its status.
+  - apiGroups: ["fah.ewohltman.github.io"]
+    resources: ["foldingathomes"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["fah.ewohltman.github.io"]
+    resources: ["foldingathomes/status"]
+    verbs: ["get", "update", "patch"]
+  # Manage the DaemonSets that run the client pods.
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Manage the ServiceAccount the client pods run as.
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fah-operator
+  labels:
+    app.kubernetes.io/name: fah-operator
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fah-operator
+subjects:
+  - kind: ServiceAccount
+    name: fah-operator
+    namespace: fah-operator-system
+---
+# Leader election: the operator creates and renews a Lease in its own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fah-operator-leader-election
+  namespace: fah-operator-system
+  labels:
+    app.kubernetes.io/name: fah-operator
+    app.kubernetes.io/component: operator
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fah-operator-leader-election
+  namespace: fah-operator-system
+  labels:
+    app.kubernetes.io/name: fah-operator
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fah-operator-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: fah-operator
+    namespace: fah-operator-system

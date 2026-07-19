@@ -1,0 +1,42 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fah
+  labels:
+    app.kubernetes.io/name: fah
+
+# A minimal FoldingAtHome resource. Applying it makes the operator roll out a
+# Folding@Home client DaemonSet across every node in the cluster.
+#
+# Set `user`/`team` to your own donor name and team number. For a passkey or a
+# v8 account token, create a Secret and reference it (see the commented block).
+---
+apiVersion: fah.ewohltman.github.io/v1alpha1
+kind: FoldingAtHome
+metadata:
+  name: fah
+  namespace: fah
+  labels:
+    app.kubernetes.io/name: fah
+spec:
+  user: Anonymous
+  team: 0
+  power: full
+  enableGPU: false
+  # cause: cancer
+  # resources:
+  #   requests:
+  #     cpu: "1"
+  #     memory: 1Gi
+  #   limits:
+  #     cpu: "4"
+  #     memory: 4Gi
+  # passkey:
+  #   secretKeyRef:
+  #     name: fah-secrets
+  #     key: passkey
+  # accountToken:
+  #   secretKeyRef:
+  #     name: fah-secrets
+  #     key: account-token
