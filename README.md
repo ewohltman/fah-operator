@@ -17,28 +17,26 @@ Kubernetes cluster with a single manifest.
 
 ## How it works
 
-```
-             ┌────────────────────────────────────────────┐
-             │              Kubernetes cluster             │
-             │                                             │
-  kubectl    │   ┌───────────────┐   watches / applies     │
-  apply ─────┼──▶│ FoldingAtHome │◀──────┐                 │
-  (CR)       │   │      (CR)      │       │                 │
-             │   └───────────────┘   ┌────┴───────────────┐ │
-             │                       │  fah-operator      │ │
-             │                       │  (Deployment, 3x)  │ │
-             │                       │  leader-elected    │ │
-             │                       └────┬───────────────┘ │
-             │                            │ creates          │
-             │                   ┌────────▼─────────┐        │
-             │                   │    DaemonSet     │        │
-             │                   └────────┬─────────┘        │
-             │        ┌──────────────┬────┴────┬──────────┐  │
-             │     ┌──▼──┐        ┌──▼──┐    ┌──▼──┐    ┌──▼──┐
-             │     │node │        │node │    │node │    │node │
-             │     │ FAH │        │ FAH │    │ FAH │    │ FAH │
-             │     └─────┘        └─────┘    └─────┘    └─────┘
-             └────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    admin(["kubectl apply<br/>FoldingAtHome CR"])
+
+    subgraph cluster["Kubernetes cluster"]
+        cr["FoldingAtHome (CR)"]
+        operator["fah-operator<br/>Deployment · 3 replicas<br/>leader-elected"]
+        ds["DaemonSet"]
+        pod1["FAH client<br/>node 1"]
+        pod2["FAH client<br/>node 2"]
+        pod3["FAH client<br/>node N"]
+
+        cr -. watched by .-> operator
+        operator -- creates / owns --> ds
+        ds --> pod1
+        ds --> pod2
+        ds --> pod3
+    end
+
+    admin -- creates --> cr
 ```
 
 - The operator runs as a **Deployment with multiple replicas**. They coordinate
@@ -58,13 +56,14 @@ Kubernetes cluster with a single manifest.
    kubectl apply -f deploy/operator.yaml
    ```
 
-2. **Create a `FoldingAtHome` resource:**
+2. **Create a `FoldingAtHome` resource.** The bundled example creates a `fah`
+   namespace and a `FoldingAtHome` in it:
 
    ```bash
-   kubectl apply -f deploy/example-foldingathome.yaml
+   kubectl apply -f example/example-foldingathome.yaml
    ```
 
-   Or inline:
+   Or inline (set `user`/`team` to your own donor name and team number):
 
    ```yaml
    apiVersion: fah.ewohltman.github.io/v1alpha1
@@ -78,30 +77,30 @@ Kubernetes cluster with a single manifest.
      power: full
    ```
 
-3. **Check status:**
+3. **Check status** (in the CR's namespace — `fah` for the bundled example):
 
    ```bash
-   kubectl get foldingathome        # DESIRED / READY node counts
-   kubectl get daemonset            # the managed client DaemonSet
-   kubectl get pods -l app.kubernetes.io/name=folding-at-home
+   kubectl get foldingathome -n fah   # DESIRED / READY node counts
+   kubectl get daemonset -n fah       # the managed client DaemonSet
+   kubectl get pods -n fah -l app.kubernetes.io/name=folding-at-home
    ```
 
 ## `FoldingAtHome` spec reference
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `image` | string | bundled `fah-client` image | Folding@Home client image. |
-| `user` | string | `Anonymous` | Donor name credited with completed work. |
-| `team` | integer | `0` | Team number to fold for. |
-| `power` | `light`\|`medium`\|`full` | `full` | How hard the client folds. |
-| `enableGPU` | bool | `false` | Request an `nvidia.com/gpu` and enable GPU folding. |
-| `cause` | string | — | Research cause preference (e.g. `cancer`). |
-| `passkey` | value or secretKeyRef | — | Passkey that bonuses work to your account. |
-| `accountToken` | value or secretKeyRef | — | Folding@Home v8 account token. |
-| `resources` | ResourceRequirements | — | CPU/memory requests & limits per pod. |
-| `nodeSelector` | map | — | Restrict which nodes run a client pod. |
-| `tolerations` | []Toleration | — | Allow scheduling onto tainted nodes. |
-| `affinity` | Affinity | — | Pod affinity/anti-affinity rules. |
+| Field          | Type                      | Default                    | Description                                         |
+|----------------|---------------------------|----------------------------|-----------------------------------------------------|
+| `image`        | string                    | bundled `fah-client` image | Folding@Home client image.                          |
+| `user`         | string                    | `Anonymous`                | Donor name credited with completed work.            |
+| `team`         | integer                   | `0`                        | Team number to fold for.                            |
+| `power`        | `light`\|`medium`\|`full` | `full`                     | How hard the client folds.                          |
+| `enableGPU`    | bool                      | `false`                    | Request an `nvidia.com/gpu` and enable GPU folding. |
+| `cause`        | string                    | —                          | Research cause preference (e.g. `cancer`).          |
+| `passkey`      | value or secretKeyRef     | —                          | Passkey that bonuses work to your account.          |
+| `accountToken` | value or secretKeyRef     | —                          | Folding@Home v8 account token.                      |
+| `resources`    | ResourceRequirements      | —                          | CPU/memory requests & limits per pod.               |
+| `nodeSelector` | map                       | —                          | Restrict which nodes run a client pod.              |
+| `tolerations`  | []Toleration              | —                          | Allow scheduling onto tainted nodes.                |
+| `affinity`     | Affinity                  | —                          | Pod affinity/anti-affinity rules.                   |
 
 ### Sensitive values
 
@@ -154,8 +153,13 @@ GitHub Actions workflows live in [`.github/workflows/`](./.github/workflows):
 - **Publish images** (`images.yml`) — on push to `main` / `v*` tags: builds and
   pushes the operator and client images to GHCR.
 - **Claude Code Review** (`claude-code-review.yml`) — automatically reviews every
-  pull request. It requires an `ANTHROPIC_API_KEY` repository secret (or install
-  the Claude GitHub App via `/install-github-app` in Claude Code).
+  pull request.
+- **Claude Code** (`claude.yml`) — responds to `@claude` mentions in issues and
+  pull requests.
+
+The two Claude workflows authenticate through the Claude GitHub App
+(`CLAUDE_CODE_OAUTH_TOKEN` secret), installed with `/install-github-app` in
+Claude Code.
 
 ## Development
 

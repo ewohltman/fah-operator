@@ -26,18 +26,19 @@ a generated file, do not hand-edit it.
 
 ## Layout
 
-| Path | Purpose |
-|------|---------|
-| `src/crd.rs` | `FoldingAtHome` custom resource (spec + status). |
-| `src/resources.rs` | Builders: `FoldingAtHome` → `DaemonSet` + `ServiceAccount`. |
-| `src/controller.rs` | Reconcile loop, status updates, error policy. |
-| `src/leader.rs` | Lease-based leader election. |
-| `src/error.rs` | Shared `Error`/`Result` types. |
-| `src/main.rs` | Binary entrypoint: client, logging, leader election. |
-| `src/bin/crdgen.rs` | Prints the CRD YAML. |
-| `deploy/` | Raw manifests: CRD, RBAC, operator Deployment, example CR. |
-| `docker/operator/` | Multi-stage Dockerfile for the operator image. |
-| `docker/fah-client/` | Dockerfile + entrypoint for the bundled FAH client image. |
+| Path                 | Purpose                                                     |
+|----------------------|-------------------------------------------------------------|
+| `src/crd.rs`         | `FoldingAtHome` custom resource (spec + status).            |
+| `src/resources.rs`   | Builders: `FoldingAtHome` → `DaemonSet` + `ServiceAccount`. |
+| `src/controller.rs`  | Reconcile loop, status updates, error policy.               |
+| `src/leader.rs`      | Lease-based leader election.                                |
+| `src/error.rs`       | Shared `Error`/`Result` types.                              |
+| `src/main.rs`        | Binary entrypoint: client, logging, leader election.        |
+| `src/bin/crdgen.rs`  | Prints the CRD YAML.                                        |
+| `deploy/`            | Raw manifests: CRD, RBAC, and the operator Deployment.      |
+| `example/`           | Example `FoldingAtHome` custom resource.                    |
+| `docker/operator/`   | Multi-stage Dockerfile for the operator image.              |
+| `docker/fah-client/` | Dockerfile + entrypoint for the bundled FAH client image.   |
 
 ## Key design points
 
@@ -75,8 +76,11 @@ Workflows are in `.github/workflows/`:
   and `develop`. Run these locally before pushing to avoid CI failures.
 - `images.yml` — builds and pushes the operator/client images to GHCR on `main`
   and `v*` tags.
-- `claude-code-review.yml` — auto-reviews pull requests via
-  `anthropics/claude-code-action`; needs the `ANTHROPIC_API_KEY` repo secret.
+- `claude-code-review.yml` — auto-reviews pull requests.
+- `claude.yml` — responds to `@claude` mentions in issues and pull requests.
+
+The Claude workflows use `anthropics/claude-code-action` authenticated through
+the Claude GitHub App (`CLAUDE_CODE_OAUTH_TOKEN` secret).
 
 ## Conventions
 
