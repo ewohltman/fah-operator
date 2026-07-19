@@ -25,6 +25,12 @@ const LEASE_TTL: Duration = Duration::from_secs(15);
 /// How often the leader renews the lease (well under [`LEASE_TTL`]).
 const RENEW_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Consecutive renewal errors tolerated before stepping down. At
+/// [`RENEW_INTERVAL`] apart this stays within [`LEASE_TTL`], so a transient API
+/// blip does not cause leadership thrashing while still releasing the lease
+/// before it can expire and be taken by another replica.
+const MAX_CONSECUTIVE_RENEW_FAILURES: u32 = 2;
+
 fn params(holder_id: &str) -> LeaseLockParams {
     LeaseLockParams {
         holder_id: holder_id.to_string(),
@@ -51,17 +57,29 @@ async fn renew_loop(
     holder_id: String,
     lost: oneshot::Sender<()>,
 ) {
+    let mut consecutive_failures = 0u32;
     loop {
         sleep(RENEW_INTERVAL).await;
         match try_acquire(&client, &namespace, &holder_id).await {
-            Ok(true) => debug!("renewed leadership lease"),
+            Ok(true) => {
+                consecutive_failures = 0;
+                debug!("renewed leadership lease");
+            }
             Ok(false) => {
                 warn!("leadership lease was taken by another replica");
                 break;
             }
             Err(err) => {
-                warn!(error = %err, "failed to renew leadership lease");
-                break;
+                consecutive_failures += 1;
+                warn!(
+                    error = %err,
+                    consecutive_failures,
+                    "failed to renew leadership lease"
+                );
+                if consecutive_failures >= MAX_CONSECUTIVE_RENEW_FAILURES {
+                    warn!("giving up leadership after repeated renewal failures");
+                    break;
+                }
             }
         }
     }

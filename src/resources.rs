@@ -275,6 +275,21 @@ mod tests {
     }
 
     #[test]
+    fn serialized_objects_carry_type_meta_for_server_side_apply() {
+        // Server-side apply requires apiVersion/kind in the patch body. The
+        // k8s-openapi Serialize impls emit them, so the applied JSON must too.
+        let cr = sample(FoldingAtHomeSpec::default());
+
+        let ds = serde_json::to_value(daemon_set(&cr).unwrap()).unwrap();
+        assert_eq!(ds["apiVersion"], "apps/v1");
+        assert_eq!(ds["kind"], "DaemonSet");
+
+        let sa = serde_json::to_value(service_account(&cr).unwrap()).unwrap();
+        assert_eq!(sa["apiVersion"], "v1");
+        assert_eq!(sa["kind"], "ServiceAccount");
+    }
+
+    #[test]
     fn env_reflects_spec() {
         let spec = FoldingAtHomeSpec {
             user: "folder".to_string(),

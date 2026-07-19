@@ -14,13 +14,16 @@ ARG FAH_CLIENT_DEB=https://download.foldingathome.org/releases/public/fah-client
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl; \
-    # Prevent the .deb postinst from trying to start a systemd service.
-    printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; \
-    chmod +x /usr/sbin/policy-rc.d; \
     curl -fsSL -o /tmp/fah-client.deb "${FAH_CLIENT_DEB}"; \
+    # The .deb postinst calls `systemctl`, which is absent in a container and
+    # would abort dpkg configuration. Shim it with a no-op for the install so
+    # apt still resolves the package's dependencies, then remove the shim.
+    printf '#!/bin/sh\nexit 0\n' > /usr/bin/systemctl; \
+    chmod +x /usr/bin/systemctl; \
     apt-get install -y --no-install-recommends /tmp/fah-client.deb; \
+    rm -f /usr/bin/systemctl; \
     apt-get purge -y --auto-remove curl; \
-    rm -f /tmp/fah-client.deb /usr/sbin/policy-rc.d; \
+    rm -f /tmp/fah-client.deb; \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root user with a writable data directory.
