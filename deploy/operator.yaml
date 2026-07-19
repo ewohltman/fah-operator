@@ -52,10 +52,12 @@ spec:
           # Pinned by immutable digest so ArgoCD deploys deterministically: each
           # release bumps this digest, ArgoCD detects the drift and rolls out the
           # new build. A mutable `:latest` tag produces no manifest diff on a
-          # code-only release, so ArgoCD would never redeploy it. Update with the
-          # digest printed by the `images.yml` publish workflow (or:
+          # code-only release, so ArgoCD would never redeploy it. The `:main` tag
+          # is advisory (readability + lets Renovate/Dependabot track updates);
+          # the digest is what actually pins the image. Update with the digest
+          # printed by the `images.yml` publish workflow (or:
           # `docker buildx imagetools inspect ghcr.io/ewohltman/fah-operator:main`).
-          image: ghcr.io/ewohltman/fah-operator@sha256:35f1515191edc73cea93d15de5a98a94b686a00c2a2169b44226619121c306f9
+          image: ghcr.io/ewohltman/fah-operator:main@sha256:35f1515191edc73cea93d15de5a98a94b686a00c2a2169b44226619121c306f9
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAME
