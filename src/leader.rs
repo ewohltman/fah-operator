@@ -92,25 +92,29 @@ async fn renew_loop(
 pub async fn run(client: Client, namespace: String, holder_id: String) -> Result<()> {
     info!(%namespace, %holder_id, lease = LEASE_NAME, "starting leader election");
     loop {
-        if try_acquire(&client, &namespace, &holder_id).await? {
-            info!("acquired leadership; starting controller");
-            let (lost_tx, lost_rx) = oneshot::channel();
-            let renew = tokio::spawn(renew_loop(
-                client.clone(),
-                namespace.clone(),
-                holder_id.clone(),
-                lost_tx,
-            ));
+        match try_acquire(&client, &namespace, &holder_id).await {
+            Ok(true) => {
+                info!("acquired leadership; starting controller");
+                let (lost_tx, lost_rx) = oneshot::channel();
+                let renew = tokio::spawn(renew_loop(
+                    client.clone(),
+                    namespace.clone(),
+                    holder_id.clone(),
+                    lost_tx,
+                ));
 
-            controller::run(client.clone(), async move {
-                let _ = lost_rx.await;
-            })
-            .await;
+                controller::run(client.clone(), async move {
+                    let _ = lost_rx.await;
+                })
+                .await;
 
-            renew.abort();
-            info!("controller stopped; re-contending for leadership");
-        } else {
-            debug!("another replica is leader; standing by");
+                renew.abort();
+                info!("controller stopped; re-contending for leadership");
+            }
+            Ok(false) => debug!("another replica is leader; standing by"),
+            // Never propagate: a standby replica must survive transient API
+            // errors and keep contending rather than crashing the process.
+            Err(err) => warn!(error = %err, "failed to check leadership lease; will retry"),
         }
         sleep(RENEW_INTERVAL).await;
     }
