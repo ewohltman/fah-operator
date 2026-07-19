@@ -1,0 +1,6 @@
+# IDE metadata
+.idea
+fah-operator.iml
+
+# Binary directory
+/target
