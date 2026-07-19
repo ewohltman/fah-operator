@@ -566,6 +566,20 @@ spec:
                 description: Optional research cause preference (e.g. `cancer`, `alzheimers`).
                 nullable: true
                 type: string
+              dataHostPath:
+                description: |-
+                  Node-local host path used to persist each client's data directory
+                  (`/fah`), so its Folding@Home identity (RSA key / F@H ID) survives pod
+                  restarts instead of regenerating and registering a new machine every
+                  time. When omitted, the data directory is ephemeral.
+
+                  A `hostPath` (not a PVC) is used deliberately: this workload is a
+                  DaemonSet with one pod per node, so node-local storage is the correct
+                  fit — a DaemonSet has no `volumeClaimTemplates`, and a ReadWriteOnce
+                  volume cannot follow a pod across nodes. An init container fixes up
+                  ownership so the non-root client can write to the path.
+                nullable: true
+                type: string
               enableGPU:
                 default: false
                 description: |-
