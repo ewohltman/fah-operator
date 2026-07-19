@@ -14,7 +14,10 @@ jobs:
     name: Build & push ${{ matrix.name }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # `contents: write` lets the operator leg commit the pinned digest back to
+      # deploy/operator.yaml (see the final step). The push uses GITHUB_TOKEN,
+      # whose pushes do not re-trigger workflows, so there is no build loop.
+      contents: write
       packages: write
     strategy:
       fail-fast: false
@@ -52,6 +55,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build & push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -62,3 +66,28 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+      # Keep deploy/operator.yaml pinned to the image just published, so ArgoCD
+      # (which syncs deploy/ from main) rolls out every new operator build
+      # deterministically. Runs only for the operator image on a push to main.
+      - name: Pin operator digest in deploy/operator.yaml
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          matrix.name == 'fah-operator'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          new="ghcr.io/${OWNER}/fah-operator:main@${DIGEST}"
+          sed -i -E "s#^(\s*image: )ghcr\.io/${OWNER}/fah-operator[^[:space:]]*#\1${new}#" deploy/operator.yaml
+          if git diff --quiet -- deploy/operator.yaml; then
+            echo "Operator digest already current; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/operator.yaml
+          git commit -m "ci: pin operator image to ${DIGEST} [skip ci]"
+          git push origin HEAD:main
