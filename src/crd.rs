@@ -56,7 +56,12 @@ pub struct FoldingAtHomeSpec {
     pub power: PowerLevel,
 
     /// Whether to request GPU resources and enable GPU folding.
-    #[serde(default)]
+    ///
+    /// Serialized as `enableGPU` (not the camelCase-default `enableGpu`) so the
+    /// acronym reads correctly in manifests. The `enableGpu` alias keeps
+    /// pre-rename resources deserializing correctly instead of silently
+    /// defaulting GPU folding back off.
+    #[serde(default, rename = "enableGPU", alias = "enableGpu")]
     pub enable_gpu: bool,
 
     /// Optional research cause preference (e.g. `cancer`, `alzheimers`).

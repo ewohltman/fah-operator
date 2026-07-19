@@ -6,9 +6,9 @@
 #   USER          donor name (default: Anonymous)
 #   TEAM          team number (default: 0)
 #   PASSKEY       optional passkey
-#   ACCOUNT_TOKEN optional v8 account token
+#   ACCOUNT_TOKEN optional v8 account token linking this machine to an account
 #   CAUSE         optional research cause preference
-#   MACHINE_NAME  display name for this machine (default: hostname)
+#   MACHINE_NAME  name used to identify this machine in the account (default: hostname)
 #   ENABLE_GPU    "true" to allow GPU folding (informational; GPU visibility is
 #                 controlled by the pod's resource requests)
 #   DATA_DIR      where config/logs/data live (default: /fah)
