@@ -1,5 +1,8 @@
 # fah-operator
 
+[![CI](https://github.com/ewohltman/fah-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/ewohltman/fah-operator/actions/workflows/ci.yml)
+[![Publish images](https://github.com/ewohltman/fah-operator/actions/workflows/images.yml/badge.svg)](https://github.com/ewohltman/fah-operator/actions/workflows/images.yml)
+
 A Kubernetes operator, written in Rust, that runs [Folding@Home](https://foldingathome.org/)
 across your cluster. Create a single `FoldingAtHome` custom resource and the
 operator deploys a Folding@Home client to **every node** as a DaemonSet.
