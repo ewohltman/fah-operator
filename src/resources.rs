@@ -190,12 +190,12 @@ fn resource_requirements(cr: &FoldingAtHome) -> Option<ResourceRequirements> {
     resources
 }
 
-/// When `spec.data_host_path` is set, the pieces needed to persist `/fah` on the
-/// node: a hostPath volume, the client's mount for it, and a root init container
-/// that fixes ownership so the non-root client can write to it.
-fn persistence(cr: &FoldingAtHome, image: &str) -> Option<(Volume, VolumeMount, Container)> {
-    let path = cr.spec.data_host_path.clone()?;
-
+/// The volume, mount, and root init container that persist `/fah` at `path`.
+///
+/// `path` is always an operator-derived path (see [`data_path`]), never
+/// user-supplied, so the root `chown` below cannot be aimed at a sensitive host
+/// directory.
+fn persistence(path: String, image: &str) -> (Volume, VolumeMount, Container) {
     let volume = Volume {
         name: DATA_VOLUME.to_string(),
         host_path: Some(HostPathVolumeSource {
@@ -232,7 +232,19 @@ fn persistence(cr: &FoldingAtHome, image: &str) -> Option<(Volume, VolumeMount, 
         ..Default::default()
     };
 
-    Some((volume, mount, init))
+    (volume, mount, init)
+}
+
+/// Operator-owned node path holding `cr`'s persisted data directory. Fixed by
+/// the operator (never user-supplied) and namespaced by the CR's namespace and
+/// name so multiple `FoldingAtHome`s do not collide on a node.
+fn data_path(cr: &FoldingAtHome, name: &str) -> String {
+    let namespace = cr
+        .meta()
+        .namespace
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
+    format!("/var/lib/fah-operator/{namespace}-{name}")
 }
 
 /// Build the DaemonSet that runs one client pod per node.
@@ -245,7 +257,9 @@ pub fn daemon_set(cr: &FoldingAtHome) -> Result<DaemonSet> {
         .image
         .clone()
         .unwrap_or_else(|| DEFAULT_IMAGE.to_string());
-    let persistence = persistence(cr, &image);
+    let persistence = spec
+        .persist_data
+        .then(|| persistence(data_path(cr, &name), &image));
 
     let container = Container {
         name: "fah-client".to_string(),
@@ -427,19 +441,20 @@ mod tests {
     }
 
     #[test]
-    fn data_host_path_adds_volume_mount_and_init_container() {
+    fn persist_data_adds_volume_mount_and_init_container() {
         let spec = FoldingAtHomeSpec {
-            data_host_path: Some("/var/lib/fah-operator/fah".to_string()),
+            persist_data: true,
             ..Default::default()
         };
         let ds = daemon_set(&sample(spec)).unwrap();
         let pod = ds.spec.unwrap().template.spec.unwrap();
 
-        // hostPath volume pointing at the requested node path.
+        // hostPath volume at the operator-derived, namespaced node path (never
+        // user-supplied) so the root chown cannot target a sensitive directory.
         let volumes = pod.volumes.unwrap();
         assert_eq!(volumes.len(), 1);
         let host_path = volumes[0].host_path.as_ref().unwrap();
-        assert_eq!(host_path.path, "/var/lib/fah-operator/fah");
+        assert_eq!(host_path.path, "/var/lib/fah-operator/fah-sample");
         assert_eq!(host_path.type_.as_deref(), Some("DirectoryOrCreate"));
 
         // Client mounts it at the data dir.

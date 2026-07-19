@@ -72,18 +72,21 @@ pub struct FoldingAtHomeSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resources: Option<ResourceRequirements>,
 
-    /// Node-local host path used to persist each client's data directory
-    /// (`/fah`), so its Folding@Home identity (RSA key / F@H ID) survives pod
-    /// restarts instead of regenerating and registering a new machine every
-    /// time. When omitted, the data directory is ephemeral.
+    /// Persist each client's data directory (`/fah`) on its node so the
+    /// Folding@Home identity (RSA key / F@H ID) survives pod restarts, instead
+    /// of regenerating and registering a new machine every time. Defaults to
+    /// off (ephemeral).
     ///
-    /// A `hostPath` (not a PVC) is used deliberately: this workload is a
+    /// Storage is a node-local `hostPath` — not a PVC — because this is a
     /// DaemonSet with one pod per node, so node-local storage is the correct
-    /// fit — a DaemonSet has no `volumeClaimTemplates`, and a ReadWriteOnce
-    /// volume cannot follow a pod across nodes. An init container fixes up
-    /// ownership so the non-root client can write to the path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_host_path: Option<String>,
+    /// fit: a DaemonSet has no `volumeClaimTemplates`, and a ReadWriteOnce
+    /// volume cannot follow a pod across nodes. The path is **chosen by the
+    /// operator** (`/var/lib/fah-operator/<namespace>-<name>`), not the user,
+    /// so enabling this cannot aim the init container's root `chown` at an
+    /// arbitrary host directory. That init container fixes up ownership so the
+    /// non-root client can write.
+    #[serde(default)]
+    pub persist_data: bool,
 
     /// Node selector constraining which nodes run a client pod.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

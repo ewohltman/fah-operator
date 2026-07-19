@@ -27,7 +27,13 @@ FAH_MACHINE="${MACHINE_NAME:-$(hostname)}"
 # v8 has no `power` knob; folding intensity is the CPU count. `nproc` is
 # cgroup-aware, so this honors the pod's CPU limit instead of grabbing every
 # core on the node. Map the operator's power level onto that count.
-CORES="$(nproc 2>/dev/null || echo 1)"
+CORES="$(nproc 2>/dev/null || true)"
+# Guard against empty or non-numeric output so the arithmetic below can't crash
+# the entrypoint under `set -e`.
+case "${CORES}" in
+  '' | *[!0-9]*) CORES=1 ;;
+esac
+[ "${CORES}" -lt 1 ] && CORES=1
 case "${POWER:-full}" in
   light)  FAH_CPUS=1 ;;
   medium) FAH_CPUS=$(( CORES / 2 )); [ "${FAH_CPUS}" -lt 1 ] && FAH_CPUS=1 ;;
