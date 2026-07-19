@@ -7,5 +7,8 @@ use kube::CustomResourceExt;
 
 fn main() {
     let crd = FoldingAtHome::crd();
-    print!("{}", serde_yaml::to_string(&crd).expect("serialize CRD to YAML"));
+    print!(
+        "{}",
+        serde_yaml::to_string(&crd).expect("serialize CRD to YAML")
+    );
 }

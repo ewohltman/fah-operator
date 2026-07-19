@@ -34,7 +34,10 @@ pub fn labels(instance: &str) -> BTreeMap<String, String> {
             "app.kubernetes.io/name".to_string(),
             "folding-at-home".to_string(),
         ),
-        ("app.kubernetes.io/instance".to_string(), instance.to_string()),
+        (
+            "app.kubernetes.io/instance".to_string(),
+            instance.to_string(),
+        ),
         (
             "app.kubernetes.io/component".to_string(),
             "client".to_string(),
@@ -184,7 +187,11 @@ pub fn daemon_set(cr: &FoldingAtHome) -> Result<DaemonSet> {
 
     let container = Container {
         name: "fah-client".to_string(),
-        image: Some(spec.image.clone().unwrap_or_else(|| DEFAULT_IMAGE.to_string())),
+        image: Some(
+            spec.image
+                .clone()
+                .unwrap_or_else(|| DEFAULT_IMAGE.to_string()),
+        ),
         env: Some(env_vars(cr)),
         ports: Some(vec![ContainerPort {
             name: Some("web".to_string()),
@@ -280,7 +287,11 @@ mod tests {
             .env
             .clone()
             .unwrap();
-        let get = |k: &str| env.iter().find(|e| e.name == k).and_then(|e| e.value.clone());
+        let get = |k: &str| {
+            env.iter()
+                .find(|e| e.name == k)
+                .and_then(|e| e.value.clone())
+        };
         assert_eq!(get("USER"), Some("folder".to_string()));
         assert_eq!(get("TEAM"), Some("42".to_string()));
         assert_eq!(get("POWER"), Some("light".to_string()));

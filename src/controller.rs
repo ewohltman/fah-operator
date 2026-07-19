@@ -95,11 +95,23 @@ async fn update_status(
     let ready = ds_status.map(|s| s.number_ready).unwrap_or(0);
 
     let (status, reason, message) = if desired == 0 {
-        ("Unknown", "NoNodes", "No nodes are scheduled to run the client".to_string())
+        (
+            "Unknown",
+            "NoNodes",
+            "No nodes are scheduled to run the client".to_string(),
+        )
     } else if ready >= desired {
-        ("True", "AllReady", format!("{ready}/{desired} client pods ready"))
+        (
+            "True",
+            "AllReady",
+            format!("{ready}/{desired} client pods ready"),
+        )
     } else {
-        ("False", "Progressing", format!("{ready}/{desired} client pods ready"))
+        (
+            "False",
+            "Progressing",
+            format!("{ready}/{desired} client pods ready"),
+        )
     };
 
     let condition = Condition {

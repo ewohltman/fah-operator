@@ -14,16 +14,17 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 
     let client = Client::try_default().await?;
 
     // Identify this replica and the namespace it runs in via the downward API.
     // Falls back to sane defaults for local `cargo run` against a kubeconfig.
-    let holder_id = env::var("POD_NAME").unwrap_or_else(|_| {
-        hostname().unwrap_or_else(|| "fah-operator-local".to_string())
-    });
+    let holder_id = env::var("POD_NAME")
+        .unwrap_or_else(|_| hostname().unwrap_or_else(|| "fah-operator-local".to_string()));
     let namespace = env::var("POD_NAMESPACE")
         .or_else(|_| env::var("OPERATOR_NAMESPACE"))
         .unwrap_or_else(|_| "default".to_string());
