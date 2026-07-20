@@ -62,5 +62,21 @@ xml_escape() {
 
 echo "fah-operator: wrote ${DATA_DIR}/config.xml for machine '${FAH_MACHINE}' (user='${FAH_USER}', team='${FAH_TEAM}', cpus='${FAH_CPUS}', gpu='${ENABLE_GPU:-false}')"
 
+# A v8 client linked to an account comes up *paused* and stays paused until it is
+# told to fold. No config.xml knob changes this (v8 dropped the v7 `<paused>`
+# setting); the only control surface is the client's local WebSocket API. Once it
+# is reachable, send a single idempotent "state:fold" command (fold.pl). Runs in
+# the background so fah-client below stays PID 1 and handles signals itself.
+(
+  for _ in $(seq 1 60); do
+    if out="$(perl /usr/local/bin/fold.pl 2>&1)"; then
+      echo "fah-operator: ${out}"
+      exit 0
+    fi
+    sleep 2
+  done
+  echo "fah-operator: WARNING: could not start folding via local API; client may stay paused" >&2
+) &
+
 # fah-client reads config.xml from and writes its data/logs to the working dir.
 exec fah-client

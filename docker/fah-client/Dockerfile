@@ -40,7 +40,10 @@ RUN useradd --system --uid 10000 --create-home --home-dir /fah fah
 WORKDIR /fah
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# fold.pl starts folding via the client's local WebSocket API (v8 account-linked
+# clients start paused); it uses only core Perl, already present in the base image.
+COPY fold.pl /usr/local/bin/fold.pl
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/fold.pl
 
 USER 10000
 # Folding@Home web-control / API port.
